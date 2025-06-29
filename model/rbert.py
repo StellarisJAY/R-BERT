@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from transformers import BertModel, BertConfig, BertTokenizer
+from transformers import BertModel, BertConfig
 
 class FC(nn.Module):
     def __init__(self, input_size, output_size, activate=False, dropout=0.0, device: torch.device=None):
@@ -22,7 +22,7 @@ class RBERT(torch.nn.Module):
         super(RBERT, self).__init__()
         self.bert = BertModel.from_pretrained(model_path, config=config)
         self.bert.to(device)
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(dropout)
         
         self.fc_cls = FC(config.hidden_size, config.hidden_size, dropout=dropout, device=device, activate=True)
         self.fc_entity = FC(config.hidden_size, config.hidden_size, dropout=dropout, device=device, activate=True)
@@ -56,11 +56,12 @@ class RBERT(torch.nn.Module):
 
         # (B,n,d)
         cls = self.fc_cls(pooler_out)
+        e1_avg = self.entity_average(last_hidden_state, e1_mask)
         # (B, d)
-        e1 = self.fc_entity(self.entity_average(last_hidden_state, e1_mask))
+        e1 = self.fc_entity(e1_avg)
+        e2_avg = self.entity_average(last_hidden_state, e2_mask)
         # (B, d)
-        e2 = self.fc_entity(self.entity_average(last_hidden_state, e2_mask))
-
-        concat = torch.concat((cls, e1, e2)).reshape((cls.shape[0], -1))
-
+        e2 = self.fc_entity(e2_avg)
+        
+        concat = torch.cat([cls.unsqueeze(1), e1.unsqueeze(1), e2.unsqueeze(1)], dim=1).reshape(cls.shape[0], -1)
         return self.classifier(concat)

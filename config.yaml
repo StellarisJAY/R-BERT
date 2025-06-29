@@ -1,0 +1,7 @@
+data_dir: ./data
+model_dir: D:/models/chinese_bert-wwm-ext
+batch_size: 32
+lr: 2e-5
+epochs: 5
+dropout: 0.3
+max_seq_len: 256
