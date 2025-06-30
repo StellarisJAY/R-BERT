@@ -5,3 +5,5 @@ lr: 2e-5
 epochs: 5
 dropout: 0.3
 max_seq_len: 256
+save_model_dir: ./trained_model
+num_hidden_layers: 1

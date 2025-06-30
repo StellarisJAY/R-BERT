@@ -3,31 +3,42 @@ from transformers import AutoTokenizer, BertConfig
 import torch
 from dataset import load_relations, preprocess_row
 from model import RBERT
-
-DATA_DIR = './data'
-MODEL_PATH = "./trained_model"
+import yaml
 
 def predict(model: RBERT, text: str, e1: str, e2: str, relations: dict, tokenizer: AutoTokenizer, device: torch.device):
     model.eval()
     e1_off = text.index(e1)
     e2_off = text.index(e2)
     inputs = preprocess_row(text, e1, e2, e1_off, e2_off, 'None', tokenizer, relations, 256)
-    input_ids = inputs['input_ids'].unsqueeze(0).to(device)
-    attention_mask = inputs['attention_mask'].unsqueeze(0).to(device)
-    e1_mask, e2_mask = inputs['e1_mask'].unsqueeze(0).to(device), inputs['e2_mask'].unsqueeze(0).to(device)
+    input_ids = inputs['input_ids'].unsqueeze(0).to(device) # (1, n)
+    attention_mask = inputs['attention_mask'].unsqueeze(0).to(device) # (1, n)
+    e1_mask, e2_mask = inputs['e1_mask'].unsqueeze(0).to(device), inputs['e2_mask'].unsqueeze(0).to(device) # (1, n)
     with torch.no_grad():
-        y_pred = model(input_ids, attention_mask, e1_mask, e2_mask)
+        y_pred = model(input_ids, attention_mask, e1_mask, e2_mask) # (1, num_labels)
         y_pred = torch.argmax(y_pred, dim=1)
         return y_pred.item()
 
 if __name__ == '__main__':
-    relation_file = os.path.join(DATA_DIR,'relation.csv')
+    with open('./config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.load(f.read(), yaml.FullLoader)
+    
+    MODEL_PATH = config['model_dir']
+    relation_file = os.path.join(config['data_dir'],'relation.csv')
     relations = load_relations(relation_file)
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    config = BertConfig.from_pretrained(MODEL_PATH)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = RBERT(MODEL_PATH, config, device, len(relations), 0.0)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+    model_config = BertConfig.from_pretrained(MODEL_PATH, num_hidden_layers=config['num_hidden_layers'])
+    model = RBERT(MODEL_PATH, model_config, device, len(relations), 0.0)
+    model.load(config['save_model_dir'], device)
 
-    result = predict(model, '明朝末年抗清英雄黄得功，本姓王，安徽合肥人后改姓黄', '黄得功', '安徽合肥', relations, tokenizer, device)
-    print(result)
+    label = predict(
+        model=model,
+        text='张三是成都人，出生于2000年1月1日。',
+        e1='张三',
+        e2='2000年1月1日',
+        relations=relations,
+        tokenizer=tokenizer,
+        device=device
+    )
+    print(label)

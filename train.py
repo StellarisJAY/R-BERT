@@ -5,20 +5,7 @@ import torch
 from dataset import load_relations, RelationDataset
 from model import RBERT
 from tqdm import tqdm
-
-DATA_DIR = './data'
-MODEL_PATH = "E:\\models\\chinese-bert-wwm-ext"
-TRAINED_MODEL_PATH = "./trained_model"
-
-train_file = os.path.join(DATA_DIR, 'train.csv')
-valid_file = os.path.join(DATA_DIR, 'valid.csv')
-test_file = os.path.join(DATA_DIR, 'test.csv')
-relation_file = os.path.join(DATA_DIR, 'relation.csv')
-
-
-batch_size = 32
-max_length = 256
-num_epochs = 5
+import yaml
 
 def train(model: RBERT, train_data: DataLoader, valid_data: DataLoader, device: torch.device, loss, optim):
     train_losses = []
@@ -61,14 +48,6 @@ def accuracy(y_pred: torch.Tensor, y: torch.Tensor):
     y_pred = y_pred.argmax(dim=-1)
     return (y_pred == y).float().mean()
 
-def save_model(model: RBERT, tokenizer: AutoTokenizer, config: BertConfig, model_path: str):
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
-    model_file = os.path.join(model_path, 'pytorch_model.bin')
-    torch.save(model.state_dict(), model_file)
-    tokenizer.save_pretrained(model_path)
-    config.save_pretrained(model_path)
-
 def test(model: RBERT, test_data: DataLoader, device: torch.device, loss):
     test_losses = []
     test_accs = []
@@ -84,27 +63,36 @@ def test(model: RBERT, test_data: DataLoader, device: torch.device, loss):
     return (torch.tensor(test_losses).mean(), torch.tensor(test_accs).mean())
 
 if __name__ == '__main__':
+    with open('./config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.load(f.read(), yaml.FullLoader)
+    
+    MODEL_PATH = config['model_dir']
+    train_file = os.path.join(config['data_dir'], 'train.csv')
+    valid_file = os.path.join(config['data_dir'], 'valid.csv')
+    test_file = os.path.join(config['data_dir'], 'test.csv')
+    relation_file = os.path.join(config['data_dir'], 'relation.csv')
+
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     # 加载关系定义
     relations = load_relations(relation_file)
     # 创建模型
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    model_config = BertConfig.from_pretrained(MODEL_PATH, num_hidden_layers=12)
-    model = RBERT(MODEL_PATH, model_config, device=device, num_labels=len(relations), dropout=0.3)
+    model_config = BertConfig.from_pretrained(MODEL_PATH, num_hidden_layers=config['num_hidden_layers'])
+    model = RBERT(MODEL_PATH, model_config, device=device, num_labels=len(relations), dropout=config['dropout'])
     print(model)
     # 加载数据集
-    train_data = RelationDataset(train_file, tokenizer, relations, max_length)
-    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    valid_data = RelationDataset(valid_file, tokenizer, relations, max_length)
-    valid_dataloader = DataLoader(valid_data, batch_size=batch_size, shuffle=False)
+    train_data = RelationDataset(train_file, tokenizer, relations, config['max_seq_len'])
+    train_dataloader = DataLoader(train_data, batch_size=config['batch_size'], shuffle=True)
+    valid_data = RelationDataset(valid_file, tokenizer, relations, config['max_seq_len'])
+    valid_dataloader = DataLoader(valid_data, batch_size=config['batch_size'], shuffle=False)
 
-    test_data = RelationDataset(test_file, tokenizer, relations, max_length)
-    test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+    test_data = RelationDataset(test_file, tokenizer, relations, config['max_seq_len'])
+    test_dataloader = DataLoader(test_data, batch_size=config['batch_size'], shuffle=False)
     # 训练模型
     model.train()
     loss = torch.nn.CrossEntropyLoss()
-    optim = torch.optim.Adam(model.parameters(), lr=3e-5, weight_decay=1e-5)
-    for epoch in range(num_epochs):
+    optim = torch.optim.Adam(model.parameters(), lr=float(config['lr']), weight_decay=1e-5)
+    for epoch in range(config['epochs']):
         train(model, train_dataloader, valid_dataloader, device, loss, optim)
     # 测试模型
     model.eval()
@@ -112,5 +100,7 @@ if __name__ == '__main__':
         test_loss, test_acc = test(model, test_dataloader, device, loss)
         print(f'test loss = {test_loss}, acc={test_acc*100:.2f}%')
 
-    save_model(model, tokenizer, model_config, TRAINED_MODEL_PATH)
+    # 保存模型参数
+    model.save(config['save_model_dir'])
+    tokenizer.save_pretrained(config['save_model_dir'])
     
