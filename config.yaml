@@ -1,5 +1,5 @@
 data_dir: ./data
-model_dir: D:/models/chinese_bert-wwm-ext
+model_dir: D:/models/chinese-bert-wwm
 batch_size: 32
 lr: 2e-5
 epochs: 5
